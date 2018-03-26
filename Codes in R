@@ -1,0 +1,362 @@
+Code in R studio:
+
+Data Preparation
+
+# Load all of the packages used in the following analysis 
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(hashmap)
+library(ggmap)
+library(tidyr)
+library(RColorBrewer)
+library(knitr)
+library(gridExtra)
+
+#Empty data frame
+h1b_df = data.frame()
+new_df = data.frame()
+
+# Load each year's data 
+for(year in seq(2017,2012)) {
+  print(paste0("Year=", as.character(year)))  
+  raw_data_path = paste0("~/Downloads/capstone project/DATA/",year,"rawdata.xlsx")
+  raw_data_path 
+  new_df = read_excel(raw_data_path)
+  print(paste0( as.character(year), " Raw data size: ", as.character(dim(new_df))))  
+  
+# Changing column names of data before 2015
+if(year != 2015 & year != 2016 & year != 2017){   
+    new_df = new_df %>%
+      mutate(CASE_NUMBER = LCA_CASE_NUMBER,
+             CASE_STATUS = STATUS,
+             EMPLOYER_NAME = LCA_CASE_EMPLOYER_NAME,
+             SOC_NAME = LCA_CASE_SOC_NAME,
+             SOC_CODE = LCA_CASE_SOC_CODE,
+             JOB_TITLE = LCA_CASE_JOB_TITLE,
+             FULL_TIME_POSITION = FULL_TIME_POS,
+             PREVAILING_WAGE = PW_1,
+             PW_UNIT_OF_PAY = PW_UNIT_1,
+             WORKSITE_CITY = LCA_CASE_WORKLOC1_CITY,
+             WORKSITE_STATE = LCA_CASE_WORKLOC1_STATE)
+}
+  
+  #write.csv(new_df,"~/Downloads/capstone project/DATA/2011rawdatadeal.csv")
+    # Adding Year column to dataframe
+    new_df = new_df %>%
+      mutate(YEAR = as.character(year))
+    
+    print(paste0( as.character(year), " Mutated data size: ", as.character(dim(new_df))))  
+    
+    # Selecting only the relevant columns
+    new_df = new_df %>%
+      select(CASE_NUMBER,
+             CASE_STATUS,
+             EMPLOYER_NAME,
+             SOC_NAME,
+             SOC_CODE,
+             JOB_TITLE,
+             FULL_TIME_POSITION,
+             PREVAILING_WAGE,
+             PW_UNIT_OF_PAY,
+             WORKSITE_CITY,
+             WORKSITE_STATE,
+             YEAR)
+    
+    
+    # Merging data with already transformed data
+    h1b_df = rbind(h1b_df, new_df)
+    print(paste0( as.character(year), " Merged data size: ",as.character(dim(h1b_df))))
+}
+
+write.csv(h1b_df,"~/Downloads/capstone project/DATA/h1bdata.csv")
+
+    # Saving read data frame
+    saveRDS(h1b_df,"h1b_df_no_transform.rds")
+    
+    # h1b_df_tx will undergo all transformations
+    h1b_df_tx <- h1b_df
+    colnames(h1b_df_tx)
+glimps(h1b_df_tx)
+
+
+H-1B Petition Case Status
+
+# Convert all the lowercase characters to uppercase
+h1b <- data.frame(lapply(h1b_df_tx, function(v) {
+  if (is.character(v)) return(toupper(v))
+  else return(v)
+}))
+
+h1b <- tbl_df(h1b)
+glimpse(h1b)
+
+# Keep only "CERTIFIED" H1B cases
+certified_h1b <- h1b %>%
+  filter(CASE_STATUS == "CERTIFIED")
+
+glimpse(certified_h1b)
+
+# Count H1B petitions filed in each year
+case_quantity_per_year <- certified_h1b %>%
+  group_by(YEAR) %>%
+  summarise(Certified = n())
+
+# Bar plot showing the H1B quantities in each year
+ggplot(case_quantity_per_year, aes(y = Certified, x = YEAR, fill = YEAR)) + 
+  geom_bar(stat = "identity", alpha = 0.7, width = 0.5) + 
+  scale_y_continuous(limits = c(0, 570000), 
+                     breaks = seq(0, 570000, 100000),
+                     labels = scales::comma) + 
+  ggtitle("Certified H-1B Petitios in Each Year")+
+  theme(
+    plot.title = element_text(size = rel(1.3)),
+    panel.background = element_rect(fill = '#f0f0f0'),
+    legend.position = "none"
+  )
+
+
+Top 10 occupations that have the most H1B applicants
+
+
+# Function to return top N occupations that have the most H1B applicants
+top_N_SOC <- function(num) {
+  certified_h1b %>%
+    filter(!is.na(certified_h1b$SOC_NAME)) %>%
+    group_by(SOC_NAME) %>%
+    summarise(num_apps = n()) %>%
+    arrange(desc(num_apps)) %>%
+    slice(1:num)
+}
+
+# Bar plot to show the top 10 H1B occupations 
+ggplot(top_N_SOC(10), 
+       aes(x = reorder(SOC_NAME, num_apps), y = num_apps)) +
+  geom_bar(stat = "identity", alpha = 0.9, fill = "orange", width = 0.7) +
+  coord_flip() +
+  scale_y_continuous() +
+  geom_text(aes(label = num_apps), hjust = -0.2, size = 2) +
+  ggtitle("Top 10 Occupations with Most H1B Petitions in 2012-2017 Period") +
+  theme(plot.title = element_text(size = rel(1)),
+        axis.text.y = element_text(size = rel(0.8))) +
+  labs(x = "SOC Name", y = "No. of Applications")
+
+Top 10 Employers that have the most H1B applicants
+
+# Function to return the top N employers that have the most H1B workers
+top_N_employers <- function(num_emp) {
+  certified_h1b %>%
+    group_by(EMPLOYER_NAME) %>%
+    summarise(num_apps = n()) %>%
+    arrange(desc(num_apps)) %>%
+    slice(1:num_emp)
+}
+
+
+# Bar plot to show the top 10 employers who filed the most h1b visa applications
+ggplot(top_N_employers(10), 
+       aes(x = reorder(EMPLOYER_NAME, num_apps), y = num_apps)) +
+  geom_bar(stat = "identity", alpha = 0.9, fill = "sky blue", width = 0.7) +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 160000), breaks = seq(0, 140000, 20000)) +
+  geom_text(aes(label = num_apps), hjust = -0.2, size = 2) +
+  ggtitle("Top 10 Employers with most applications") +
+  theme(plot.title = element_text(size = rel(1)),
+        axis.text.y = element_text(size = rel(0.8))) +
+  labs(x = "Employer Name", y = "No. of Applications")
+
+H1B petitions by states
+
+# Count H1B petitions filed by each state
+petition_by_state <- certified_h1b %>%
+  filter(WORKSITE_STATE != "NA") %>%
+  group_by(region = tolower(WORKSITE_STATE)) %>%
+  summarise(no_petitions = n()) %>%
+  arrange(desc(no_petitions))
+ 
+g <- ggplot(petition_by_state[1:10,], aes(x=reorder(region,no_petitions),y=no_petitions)) +
+  geom_bar(stat = "identity", fill = "blue") + coord_flip() +
+  ggtitle("H1B petitions by state in 2012-2017 Period")+
+  get_theme() +  
+  labs(x = "Number of petitions", y = "State") + scale_color_discrete()
+
+g
+
+
+Count H1B petitions filed in CA, NY and TX in each year
+
+
+# Count H1B petitions filed in CA, NY and TX in each year
+cnt_case_per_year <- certified_h1b %>%
+  filter(WORKSITE_STATE %in% c("CA", "NY", "TX")) %>%
+  group_by(YEAR, WORKSITE_STATE) %>%
+  summarise(count = n()) %>%
+  arrange(YEAR, WORKSITE_STATE) 
+
+# Bar plot showing H1B quantities of each state in each year
+ggplot(cnt_case_per_year, aes(x = YEAR, y = count, fill = WORKSITE_STATE)) +
+  geom_bar(stat = "identity", position = position_dodge(), alpha = 0.8,
+           color = "grey") +
+  ggtitle("Quantity of H1B cases in California, New York and Texas from 2012 to 2017") +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = rel(1.3)))
+
+Prevailing wages of top 10 employers
+
+# Top 10 employers who filed the most H1B petitions
+top_10_employers <- certified_h1b %>%
+  group_by(EMPLOYER_NAME) %>%
+  summarise(num_apps = n()) %>%
+  arrange(desc(num_apps)) %>%
+  slice(1:10) %>%
+  select(EMPLOYER_NAME)
+
+employers_boxplot_df <- certified_h1b %>%
+  filter(EMPLOYER_NAME %in% top_10_employers$EMPLOYER_NAME)
+
+# Boxplot showing the wage distribution of each employer
+ggplot(employers_boxplot_df, aes(y = PREVAILING_WAGE, x = EMPLOYER_NAME, 
+                                 fill = EMPLOYER_NAME, notch = TRUE, notchwidth = .3)) + 
+  geom_boxplot(notch = TRUE) + 
+  #scale_y_continuous(limits = c(0, 150000), 
+                     #breaks = seq(0, 150000, 10000)) + 
+  ggtitle("Wages for H1B cases in top 10 companies")+
+  theme(
+    plot.title = element_text(size = rel(1.3)),
+    panel.background = element_rect(fill = '#f0f0f0'),
+    axis.text.x=element_blank(),
+    legend.position = "bottom", 
+    legend.title = element_text(size = rel(0.7)),
+    legend.text = element_text(size = rel(0.4)), 
+    panel.grid.major = element_line(colour = '#f0f0f0'),
+    panel.grid.major.x = element_line(linetype = 'blank'),
+    panel.grid.minor = element_line(linetype = 'blank')  
+  )
+
+Top 10 occupations with highest median prevailing wages
+
+# Top 10 occupations with the highest wages
+top_10_soc_with_highest_wage <- certified_h1b %>%
+  group_by(SOC_NAME) %>%
+  summarise(median_wage = median(PREVAILING_WAGE)) %>%
+  arrange(desc(median_wage)) %>%
+  slice(1:10) %>%
+  select(SOC_NAME, median_wage)
+
+# Bar plot showing median wages for each occupation
+ggplot(top_10_soc_with_highest_wage, aes(y = median_wage, x = reorder(SOC_NAME, median_wage))) + 
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.7, width = 0.7) + 
+  #scale_y_continuous(limits = c(0, 150000), 
+  #breaks = seq(0, 150000, 5000)) + 
+  ggtitle("Top 10 occupations with highest median prevailing wages") +
+  coord_flip() +
+  theme(
+    plot.title = element_text(size = rel(1)),
+    axis.text.x=element_text(size = rel(0.8)),
+    legend.position = "bottom"
+  ) +
+  labs(x = "Occupational Name")
+
+
+knitr::kable(top_10_soc_with_highest_wage)
+
+
+Trend of wages from 2012 to 2017
+
+set.seed(123)
+
+# Filter out the top 1% outliers in the prevailing_wage variable
+wage_year_sample <- subset(certified_h1b[sample(1:nrow(certified_h1b), 300000), 
+                                         c(8, 12)], 
+                           !is.na(PREVAILING_WAGE) & 
+                             PREVAILING_WAGE <= quantile(certified_h1b$PREVAILING_WAGE, 
+                                                         0.99))
+
+wage_year_sample <- wage_year_sample %>%
+  group_by(YEAR) %>%
+  mutate(mean_wage = mean(PREVAILING_WAGE),
+         median_wage = median(PREVAILING_WAGE),
+         '10th_percentile' = quantile(PREVAILING_WAGE, 0.1),
+         '90th_percentile' = quantile(PREVAILING_WAGE, 0.9))
+
+wage_year_stats <- wage_year_sample %>%
+  distinct(mean_wage, median_wage, `10th_percentile`, `90th_percentile`)
+
+wage_year_stats <- wage_year_stats[order(wage_year_stats$YEAR), 
+                                   c(ncol(wage_year_stats), 
+                                     1:(ncol(wage_year_stats) - 1))]
+
+# From wide to long format
+wage_year_stats_long <- gather(wage_year_stats, statistics, values, 
+                               mean_wage, median_wage,`10th_percentile`, `90th_percentile`,
+                               factor_key = TRUE)
+
+# Trend of median, mean, 10th percentile and 90th percentile of wages
+wage_trend <- 
+  ggplot(wage_year_stats_long , 
+                     aes(x = YEAR, y = values, group = statistics)) +
+  geom_line(aes(color = statistics), lineend = "round", size = 1) +
+  expand_limits(y = 0) +
+  scale_y_continuous(breaks = seq(0, 120000, 10000), labels = scales::comma) +
+  ggtitle("Wage Trend from 2011 to 2016: Line Chart") +
+  labs(y = "wage / $") +
+  theme(plot.title = element_text(size = rel(1.3)),
+        legend.position = "bottom")
+
+wage_trend
+
+Changes in the proportion of computer and mathematical occupations
+# Computer and Mathematical Occupations 
+cmo <- c("COMPUTER AND INFORMATION RESEARCH SCIENTISTS",
+         "COMPUTER SYSTEMS ANALYSTS", "INFORMATION SECURITY ANALYSTS",
+         "COMPUTER PROGRAMMERS", "SOFTWARE DEVELOPERS, APPLICATIONS",
+         "SOFTWARE DEVELOPERS, SYSTEMS SOFTWARE", "WEB DEVELOPERS", 
+         "DATABASE ADMINISTRATORS",
+         "NETWORK AND COMPUTER SYSTEMS ADMINISTRATORS", 
+         "COMPUTER NETWORK ARCHITECTS", 
+         "COMPUTER USER SUPPORT SPECIALISTS", "COMPUTER NETWORK SUPPORT SPECIALISTS", 
+         "COMPUTER OCCUPATIONS, ALL OTHER", "ACTURIES", "MATHEMATICIANS", 
+         "OPERATIONS RESEARCH ANALYSTS",
+         "STATISTICIANS", "MATHEMATICAL TECHNICIANS", 
+         "MATHEMATICAL SCIENCE OCCUPATIONS, ALL OTHER")
+
+
+# Generate a dataset containing H1B records with computer and mathematical occupations
+cmo_quantity_per_year <- certified_h1b %>%
+  filter(SOC_NAME %in% cmo & !is.na(PREVAILING_WAGE)) %>%
+  #certified_h1b$PREVAILING_WAGE.numbers <- as.numeric(as.vector(certified_h1b$PREVAILING_WAGE))
+  group_by(YEAR) %>%
+  summarise(cm_occupations = n())
+            #cm_median_wage = median(PREVAILING_WAGE))
+
+# Generate a dataset containing H1B records with computer and mathematical occupations
+case_quantity_per_year <- certified_h1b %>%
+  #filter(SOC_NAME %in% cmo & !is.na(PREVAILING_WAGE)) %>%
+  #certified_h1b$PREVAILING_WAGE.numbers <- as.numeric(as.vector(certified_h1b$PREVAILING_WAGE))
+  group_by(YEAR) %>%
+  summarise(all_occupations = n())
+#cm_median_wage = median(PR
+
+# Join two datasets together
+multi_df1 <- merge(x = cmo_quantity_per_year,
+                   y = case_quantity_per_year,
+                   by = "YEAR",
+                   all = TRUE)
+
+# Calculate the percentage of computer and mathematical occupations 
+multi_df1 <- multi_df1 %>%
+  mutate(other_occupations = all_occupations - cm_occupations,
+         cm_percent = cm_occupations / all_occupations) %>%
+  select(YEAR, cm_occupations, other_occupations)
+
+multi_df1 <- gather(multi_df1, occupation, count, cm_occupations:other_occupations)
+
+# Stacked bar plot showing the proportions of computer and 
+# mathematical occupations over years
+ggplot(multi_df1,
+       aes(x = YEAR, y = count, fill = occupation)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(0, 600000, 100000), 
+                     limits = c(0, 600000), labels = scales::comma) +
+  labs(x = "Year", y = "No. of H1B Cases", 
+       title = "Change in the proportion of computer and mathematical occupations")
