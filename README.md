@@ -1,1 +1,3 @@
 # Data-Analysis-of-H1B-Visa-Petitions-in-2012-2017
+
+The H-1B program allows foreign workers to be temporarily employed by U.S. employers in occupations that require the theoretical and practical application. The disclosure application data can be accessed to perform in-depth analysis to get the key insights of this program. In particular, the data in the period of 2012 -2017 is used here to analyze which employers, occupations and states have the most applicants, how the prevailing wage varies across different employers and occupations over 2012-2017, and the corresponding information of possible data science related occupations.
